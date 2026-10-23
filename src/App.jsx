@@ -1,38 +1,48 @@
+
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import {
+  getIssues,
+  createIssue,
+  supportIssue as sendIssueSupport,
+  updateIssueStatus,
+} from "./api";
 
-const STORAGE_KEY = "campusfix_issues";
 const SESSION_KEY = "campusfix_session";
+const CACHE_KEY = "campusfix_issues";
 
-const STUDENT_CREDENTIALS = {
+const STUDENT_LOGIN = {
   username: "student01",
   password: "student123",
 };
 
-const ADMIN_CREDENTIALS = {
+const ADMIN_LOGIN = {
   username: "admin01",
   password: "admin123",
 };
 
 const categories = [
-  "Wi-Fi",
-  "Water",
-  "Electricity",
-  "Cleanliness",
-  "Security",
   "Infrastructure",
+  "Electrical",
+  "Water & Sanitation",
+  "Cleanliness",
+  "Internet",
+  "Safety",
+  "Hostel",
+  "Classroom",
   "Other",
 ];
 
 const locations = [
-  "Block A",
-  "Block B",
-  "Block C",
-  "Hostel A",
-  "Hostel B",
+  "Main Block",
   "Library",
+  "Computer Lab",
+  "CSE Block",
+  "ECE Block",
+  "Hostel",
   "Cafeteria",
-  "Main Gate",
+  "Parking Area",
+  "Sports Ground",
 ];
 
 const statuses = [
@@ -45,138 +55,144 @@ const statuses = [
 
 const demoIssues = [
   {
-    id: "CF-1042",
-    title: "Wi-Fi outage in Computer Lab",
+    id: "CF-1001",
+    title: "Wi-Fi not working in Computer Lab",
     description:
-      "Students are unable to access the campus network in the computer laboratory.",
-    category: "Wi-Fi",
-    location: "Block C",
-    urgency: "Critical",
-    affected: 27,
-    priority: 92,
-    status: "In Progress",
-    team: "IT Support",
-    createdAt: "Today",
-    supportedBy: 27,
-    reportedBy: "student01",
-  },
-  {
-    id: "CF-1038",
-    title: "Water leakage on second floor",
-    description:
-      "A water pipe is leaking near the second-floor corridor.",
-    category: "Water",
-    location: "Hostel B",
+      "Students are unable to access the internet from several systems in the computer lab.",
+    category: "Internet",
+    location: "Computer Lab",
     urgency: "High",
     affected: 18,
-    priority: 88,
-    status: "Pending",
-    team: "Plumbing",
-    createdAt: "Today",
-    supportedBy: 18,
+    priority: 91,
+    status: "In Progress",
+    team: "IT Support",
     reportedBy: "student01",
+    createdAt: new Date().toISOString(),
+    supportedBy: 18,
   },
   {
-    id: "CF-1031",
-    title: "Power failure in Room 204",
+    id: "CF-1002",
+    title: "Water leakage near Main Block",
     description:
-      "Power supply is unavailable in Room 204 and nearby classrooms.",
-    category: "Electricity",
-    location: "Block A",
+      "There is continuous water leakage near the entrance and the floor becomes slippery.",
+    category: "Water & Sanitation",
+    location: "Main Block",
     urgency: "High",
-    affected: 42,
-    priority: 86,
-    status: "In Progress",
-    team: "Electrical",
-    createdAt: "Yesterday",
-    supportedBy: 42,
+    affected: 12,
+    priority: 88,
+    status: "Assigned",
+    team: "Maintenance",
     reportedBy: "student01",
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+    supportedBy: 12,
+  },
+  {
+    id: "CF-1003",
+    title: "Lights not working in classroom",
+    description:
+      "Multiple ceiling lights are not functioning and the classroom becomes difficult to use.",
+    category: "Electrical",
+    location: "CSE Block",
+    urgency: "Medium",
+    affected: 8,
+    priority: 67,
+    status: "Verified",
+    team: "Electrical Team",
+    reportedBy: "student01",
+    createdAt: new Date(Date.now() - 172800000).toISOString(),
+    supportedBy: 8,
   },
 ];
-
-function getTeam(category) {
-  const teams = {
-    "Wi-Fi": "IT Support",
-    Water: "Plumbing",
-    Electricity: "Electrical",
-    Cleanliness: "Housekeeping",
-    Security: "Security Team",
-    Infrastructure: "Maintenance",
-    Other: "Campus Operations",
-  };
-
-  return teams[category] || "Campus Operations";
-}
-
-function getIcon(category) {
-  const icons = {
-    "Wi-Fi": "◉",
-    Water: "◒",
-    Electricity: "ϟ",
-    Cleanliness: "✦",
-    Security: "◇",
-    Infrastructure: "▣",
-    Other: "•",
-  };
-
-  return icons[category] || "•";
-}
-
-function normalizeText(text) {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 function calculatePriority(urgency, affected, category, location) {
   const urgencyScore = {
     Low: 10,
     Medium: 25,
-    High: 35,
+    High: 40,
     Critical: 40,
   };
 
   const categoryScore = {
-    "Wi-Fi": 18,
-    Electricity: 20,
-    Water: 20,
-    Security: 20,
+    Safety: 20,
+    Electrical: 18,
+    "Water & Sanitation": 18,
+    Internet: 16,
     Infrastructure: 16,
-    Cleanliness: 10,
+    Hostel: 14,
+    Cleanliness: 12,
+    Classroom: 12,
     Other: 8,
   };
 
-  const locationScore =
-    location === "Main Gate" ||
-    location === "Library" ||
-    location === "Cafeteria"
-      ? 10
-      : 7;
+  const locationScore = {
+    "Main Block": 10,
+    Library: 9,
+    "Computer Lab": 9,
+    "CSE Block": 8,
+    "ECE Block": 8,
+    Hostel: 8,
+    Cafeteria: 7,
+    "Parking Area": 6,
+    "Sports Ground": 5,
+  };
 
-  const peopleScore = Math.min(Number(affected || 0) * 0.75, 30);
+  const urgencyPoints = urgencyScore[urgency] || 20;
+  const affectedPoints = Math.min(Number(affected || 1) * 2, 30);
+  const categoryPoints = categoryScore[category] || 8;
+  const locationPoints = locationScore[location] || 5;
 
   return Math.min(
     100,
-    Math.round(
-      (urgencyScore[urgency] || 10) +
-        peopleScore +
-        (categoryScore[category] || 8) +
-        locationScore
-    )
+    urgencyPoints + affectedPoints + categoryPoints + locationPoints
   );
 }
 
-function priorityLabel(priority) {
+function getTeam(category) {
+  const teams = {
+    Infrastructure: "Maintenance",
+    Electrical: "Electrical Team",
+    "Water & Sanitation": "Maintenance",
+    Cleanliness: "Housekeeping",
+    Internet: "IT Support",
+    Safety: "Security",
+    Hostel: "Hostel Administration",
+    Classroom: "Academic Facilities",
+    Other: "Campus Support",
+  };
+
+  return teams[category] || "Campus Support";
+}
+
+function mapDatabaseIssue(row) {
+  return {
+    id: row.issue_id,
+    title: row.title,
+    description: row.description,
+    category: row.category,
+    location: row.location,
+    urgency: row.urgency,
+    affected: row.affected_count,
+    priority: row.priority,
+    status: row.status,
+    team: row.team,
+    reportedBy: row.reported_by,
+    createdAt: row.created_at,
+    supportedBy: row.affected_count,
+  };
+}
+
+function getPriorityLabel(priority) {
   if (priority >= 85) return "Critical";
   if (priority >= 70) return "High";
-  if (priority >= 45) return "Medium";
+  if (priority >= 50) return "Medium";
   return "Low";
 }
 
-function statusIndex(status) {
-  return statuses.indexOf(status);
+function getPriorityClass(priority) {
+  if (priority >= 85) return "critical";
+  if (priority >= 70) return "high";
+  if (priority >= 50) return "medium";
+  return "low";
 }
 
 function App() {
@@ -190,70 +206,95 @@ function App() {
   });
 
   const [loginRole, setLoginRole] = useState(null);
-
   const [loginForm, setLoginForm] = useState({
     username: "",
     password: "",
   });
 
-  const [loginError, setLoginError] = useState("");
+  const [issues, setIssues] = useState(() => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      return cached ? JSON.parse(cached) : demoIssues;
+    } catch {
+      return demoIssues;
+    }
+  });
 
-  const [issues, setIssues] = useState([]);
-  const [screen, setScreen] = useState("dashboard");
-  const [selectedIssue, setSelectedIssue] = useState(null);
-  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [online, setOnline] = useState(navigator.onLine);
+
+  const [activePage, setActivePage] = useState("dashboard");
+  const [selectedIssue, setSelectedIssue] = useState(null);
+
   const [toast, setToast] = useState("");
-  const [showAdmin, setShowAdmin] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [filterCategory, setFilterCategory] = useState("All");
 
   const [form, setForm] = useState({
     title: "",
     description: "",
-    category: "Wi-Fi",
-    location: "Block A",
+    category: "Infrastructure",
+    location: "Main Block",
     urgency: "Medium",
     affected: 1,
   });
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+  const isAdmin = () => session?.role === "admin";
+  const isStudent = () => session?.role === "student";
 
-        if (saved) {
-          setIssues(JSON.parse(saved));
+  function showToast(message) {
+    setToast(message);
+    setTimeout(() => setToast(""), 3500);
+  }
+
+  useEffect(() => {
+    async function loadIssues() {
+      setLoading(true);
+
+      try {
+        const data = await getIssues();
+        const mapped = data.map(mapDatabaseIssue);
+
+        setIssues(mapped);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(mapped));
+      } catch (error) {
+        console.error("Loading issues failed:", error);
+
+        const cached = localStorage.getItem(CACHE_KEY);
+
+        if (cached) {
+          setIssues(JSON.parse(cached));
         } else {
           setIssues(demoIssues);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(demoIssues));
         }
-      } catch {
-        setIssues(demoIssues);
+
+        showToast(
+          "Unable to connect to server. Showing saved campus data."
+        );
+      } finally {
+        setLoading(false);
       }
+    }
 
-      setIsLoading(false);
-    }, 350);
-
-    return () => clearTimeout(timer);
+    loadIssues();
   }, []);
 
   useEffect(() => {
-    if (!isLoading) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(issues));
-    }
-  }, [issues, isLoading]);
+    localStorage.setItem(CACHE_KEY, JSON.stringify(issues));
+  }, [issues]);
 
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      showToast("Connection restored.");
-    };
+    function handleOnline() {
+      setOnline(true);
+      showToast("Internet connection restored.");
+    }
 
-    const handleOffline = () => {
-      setIsOnline(false);
-      showToast("You are offline. Changes are saved locally.");
-    };
+    function handleOffline() {
+      setOnline(false);
+      showToast("You are offline. Saved data will remain available.");
+    }
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
@@ -263,101 +304,6 @@ function App() {
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
-
-  function showToast(message) {
-    setToast(message);
-
-    setTimeout(() => {
-      setToast("");
-    }, 3000);
-  }
-
-  function handleLoginChange(field, value) {
-    setLoginForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-
-    setLoginError("");
-  }
-
-  function handleLogin(event) {
-    event.preventDefault();
-
-    const username = loginForm.username.trim();
-    const password = loginForm.password;
-
-    const credentials =
-      loginRole === "admin"
-        ? ADMIN_CREDENTIALS
-        : STUDENT_CREDENTIALS;
-
-    if (
-      username === credentials.username &&
-      password === credentials.password
-    ) {
-      const newSession = {
-        role: loginRole,
-        username,
-        loggedInAt: new Date().toISOString(),
-      };
-
-      localStorage.setItem(
-        SESSION_KEY,
-        JSON.stringify(newSession)
-      );
-
-      setSession(newSession);
-      setLoginForm({
-        username: "",
-        password: "",
-      });
-      setLoginError("");
-      setScreen("dashboard");
-      setShowAdmin(false);
-    } else {
-      setLoginError(
-        loginRole === "admin"
-          ? "Invalid admin credentials."
-          : "Invalid student credentials."
-      );
-    }
-  }
-
-  function logout() {
-    localStorage.removeItem(SESSION_KEY);
-    setSession(null);
-    setLoginRole(null);
-    setScreen("dashboard");
-    setSelectedIssue(null);
-    setShowAdmin(false);
-  }
-
-  function isAdmin() {
-    return session?.role === "admin";
-  }
-
-  function isStudent() {
-    return session?.role === "student";
-  }
-
-  function updateForm(field, value) {
-    setForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  }
-
-  function resetForm() {
-    setForm({
-      title: "",
-      description: "",
-      category: "Wi-Fi",
-      location: "Block A",
-      urgency: "Medium",
-      affected: 1,
-    });
-  }
 
   const priorityPreview = useMemo(
     () =>
@@ -370,85 +316,180 @@ function App() {
     [form]
   );
 
-  const sortedIssues = useMemo(
-    () => [...issues].sort((a, b) => b.priority - a.priority),
-    [issues]
-  );
+  const duplicateMatch = useMemo(() => {
+    if (!form.title.trim() && !form.description.trim()) {
+      return null;
+    }
 
-  const activeIssues = issues.filter(
-    (issue) => issue.status !== "Resolved"
-  );
+    const text = `${form.title} ${form.description}`
+      .toLowerCase()
+      .trim();
 
-  const criticalIssues = issues.filter(
-    (issue) =>
-      issue.priority >= 85 && issue.status !== "Resolved"
-  );
+    if (text.length < 8) return null;
 
-  const resolvedIssues = issues.filter(
-    (issue) => issue.status === "Resolved"
-  );
+    return (
+      issues.find((issue) => {
+        const existingText =
+          `${issue.title} ${issue.description}`.toLowerCase();
 
-  const totalAffected = issues.reduce(
-    (sum, issue) => sum + Number(issue.affected || 0),
-    0
-  );
+        const words = text
+          .split(/\s+/)
+          .filter((word) => word.length > 4)
+          .slice(0, 8);
 
-  const myIssues = issues.filter(
-    (issue) => issue.reportedBy === session?.username
-  );
+        if (words.length === 0) return false;
 
-  const locationsData = locations.map((location) => {
-    const locationIssues = issues.filter(
-      (issue) =>
-        issue.location === location &&
-        issue.status !== "Resolved"
+        const matches = words.filter((word) =>
+          existingText.includes(word)
+        );
+
+        return (
+          matches.length >= Math.max(2, Math.ceil(words.length * 0.4))
+        );
+      }) || null
+    );
+  }, [form.title, form.description, issues]);
+
+  const filteredIssues = useMemo(() => {
+    return issues.filter((issue) => {
+      const matchesSearch =
+        !search.trim() ||
+        issue.title.toLowerCase().includes(search.toLowerCase()) ||
+        issue.description.toLowerCase().includes(search.toLowerCase()) ||
+        issue.location.toLowerCase().includes(search.toLowerCase());
+
+      const matchesStatus =
+        filterStatus === "All" || issue.status === filterStatus;
+
+      const matchesCategory =
+        filterCategory === "All" || issue.category === filterCategory;
+
+      return matchesSearch && matchesStatus && matchesCategory;
+    });
+  }, [issues, search, filterStatus, filterCategory]);
+
+  const stats = useMemo(() => {
+    const total = issues.length;
+
+    const active = issues.filter(
+      (issue) => issue.status !== "Resolved"
+    ).length;
+
+    const resolved = issues.filter(
+      (issue) => issue.status === "Resolved"
+    ).length;
+
+    const highPriority = issues.filter(
+      (issue) => issue.priority >= 70 && issue.status !== "Resolved"
+    ).length;
+
+    const affected = issues.reduce(
+      (sum, issue) => sum + Number(issue.affected || 0),
+      0
     );
 
-    return {
-      location,
-      count: locationIssues.length,
-      critical: locationIssues.filter(
-        (issue) => issue.priority >= 85
-      ).length,
-    };
-  });
+    return { total, active, resolved, highPriority, affected };
+  }, [issues]);
 
-  const duplicateMatch = useMemo(() => {
-    const title = normalizeText(form.title);
-
-    if (title.length < 5) return null;
-
-    return issues.find((issue) => {
-      const existingTitle = normalizeText(issue.title);
-
-      const sameCategory =
-        issue.category === form.category;
-
-      const sameLocation =
-        issue.location === form.location;
-
-      const words = title
-        .split(" ")
-        .filter((word) => word.length > 3);
-
-      const sharedWords = words.filter((word) =>
-        existingTitle.includes(word)
+  const campusPulse = useMemo(() => {
+    return locations.map((location) => {
+      const locationIssues = issues.filter(
+        (issue) => issue.location === location
       );
 
-      return (
-        sameCategory &&
-        sameLocation &&
-        sharedWords.length >= Math.min(2, words.length)
-      );
+      const highestPriority = locationIssues.length
+        ? Math.max(...locationIssues.map((issue) => issue.priority))
+        : 0;
+
+      return {
+        location,
+        count: locationIssues.length,
+        priority: highestPriority,
+      };
     });
-  }, [
-    form.title,
-    form.category,
-    form.location,
-    issues,
-  ]);
+  }, [issues]);
 
-  function submitIssue(event) {
+  function handleLoginInput(event) {
+    const { name, value } = event.target;
+
+    setLoginForm((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  }
+
+  function handleLogin(event) {
+    event.preventDefault();
+
+    const credentials =
+      loginRole === "admin" ? ADMIN_LOGIN : STUDENT_LOGIN;
+
+    if (
+      loginForm.username.trim() === credentials.username &&
+      loginForm.password === credentials.password
+    ) {
+      const newSession = {
+        role: loginRole,
+        username: credentials.username,
+        loggedInAt: new Date().toISOString(),
+      };
+
+      localStorage.setItem(SESSION_KEY, JSON.stringify(newSession));
+      setSession(newSession);
+
+      setLoginForm({ username: "", password: "" });
+      setActivePage("dashboard");
+
+      showToast(
+        `${loginRole === "admin" ? "Admin" : "Student"} login successful.`
+      );
+    } else {
+      showToast("Invalid username or password.");
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem(SESSION_KEY);
+    setSession(null);
+    setLoginRole(null);
+    setSelectedIssue(null);
+    setActivePage("dashboard");
+  }
+
+  function goTo(page) {
+    if (page === "report" && !isStudent()) {
+      showToast("Only students can report an issue.");
+      return;
+    }
+
+    if (page === "admin" && !isAdmin()) {
+      showToast("Admin access is required.");
+      return;
+    }
+
+    setSelectedIssue(null);
+    setActivePage(page);
+  }
+
+  function updateForm(field, value) {
+    setForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  }
+
+  function resetForm() {
+    setForm({
+      title: "",
+      description: "",
+      category: "Infrastructure",
+      location: "Main Block",
+      urgency: "Medium",
+      affected: 1,
+    });
+  }
+
+  async function submitIssue(event) {
     event.preventDefault();
 
     if (!isStudent()) {
@@ -458,15 +499,18 @@ function App() {
 
     if (isSaving) return;
 
+    if (!online) {
+      showToast("You are offline. Please reconnect before submitting.");
+      return;
+    }
+
     if (!form.title.trim()) {
       showToast("Please enter an issue title.");
       return;
     }
 
     if (form.title.trim().length < 5) {
-      showToast(
-        "Issue title must contain at least 5 characters."
-      );
+      showToast("Issue title must contain at least 5 characters.");
       return;
     }
 
@@ -481,9 +525,7 @@ function App() {
     }
 
     if (form.description.length > 400) {
-      showToast(
-        "Description cannot exceed 400 characters."
-      );
+      showToast("Description cannot exceed 400 characters.");
       return;
     }
 
@@ -496,1900 +538,1154 @@ function App() {
       showToast(
         `Similar issue found: ${duplicateMatch.id}. Support it instead.`
       );
-      openIssue(duplicateMatch);
+
+      setSelectedIssue(duplicateMatch);
+      setActivePage("issue");
       return;
     }
 
-    setIsSaving(true);
+    try {
+      setIsSaving(true);
 
-    setTimeout(() => {
       const newIssue = {
-        id: `CF-${Math.floor(
-          1000 + Math.random() * 8999
-        )}`,
         title: form.title.trim(),
         description: form.description.trim(),
         category: form.category,
         location: form.location,
         urgency: form.urgency,
-        affected: Number(form.affected),
-        supportedBy: Number(form.affected),
+        affected_count: Number(form.affected),
         priority: priorityPreview,
         status: "Pending",
         team: getTeam(form.category),
-        createdAt: "Just now",
-        reportedBy: session.username,
+        reported_by: session.username,
       };
 
-      setIssues((prev) => [newIssue, ...prev]);
+      const data = await createIssue(newIssue);
+      const mappedIssue = mapDatabaseIssue(data);
 
-      setIsSaving(false);
+      setIssues((previous) => {
+        const exists = previous.some(
+          (issue) => issue.id === mappedIssue.id
+        );
+
+        return exists ? previous : [mappedIssue, ...previous];
+      });
+
       resetForm();
       showToast("Issue submitted successfully.");
-      openIssue(newIssue);
-    }, 500);
+
+      setSelectedIssue(mappedIssue);
+      setActivePage("issue");
+    } catch (error) {
+      console.error("Submit issue error:", error);
+      showToast(error.message || "Could not save the issue.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  function supportIssue(issueId) {
+  // FIXED: Student support now uses the backend API.
+  async function supportIssue(issueId) {
     if (!isStudent()) {
+      showToast("Please use a student account to support issues.");
+      return;
+    }
+
+    if (!online) {
       showToast(
-        "Please use a student account to support issues."
+        "You are offline. Please reconnect before supporting an issue."
       );
       return;
     }
 
-    setIssues((prev) =>
-      prev.map((issue) => {
-        if (issue.id !== issueId) return issue;
+    const issue = issues.find((item) => item.id === issueId);
 
-        const affected =
-          Number(issue.affected || 0) + 1;
+    if (!issue) {
+      showToast("Issue not found.");
+      return;
+    }
 
-        return {
-          ...issue,
-          affected,
-          supportedBy:
-            Number(issue.supportedBy || 0) + 1,
-          priority: calculatePriority(
-            issue.urgency,
-            affected,
-            issue.category,
-            issue.location
-          ),
-        };
-      })
-    );
+    if (issue.status === "Resolved") {
+      showToast("This issue has already been resolved.");
+      return;
+    }
 
-    setSelectedIssue((prev) => {
-      if (!prev || prev.id !== issueId) return prev;
-
-      const affected =
-        Number(prev.affected || 0) + 1;
-
-      return {
-        ...prev,
+    try {
+      const affected = Number(issue.affected || 0) + 1;
+      const priority = calculatePriority(
+        issue.urgency,
         affected,
-        supportedBy:
-          Number(prev.supportedBy || 0) + 1,
-        priority: calculatePriority(
-          prev.urgency,
-          affected,
-          prev.category,
-          prev.location
-        ),
-      };
-    });
+        issue.category,
+        issue.location
+      );
 
-    showToast(
-      "Your support was added to this issue."
-    );
+      const data = await sendIssueSupport(
+        issueId,
+        affected,
+        priority
+      );
+
+      const updatedIssue = mapDatabaseIssue(data);
+
+      setIssues((previous) => {
+        const updated = previous.map((item) =>
+          item.id === issueId ? updatedIssue : item
+        );
+
+        localStorage.setItem(CACHE_KEY, JSON.stringify(updated));
+        return updated;
+      });
+
+      setSelectedIssue((previous) =>
+        previous?.id === issueId ? updatedIssue : previous
+      );
+
+      showToast("Your support was added to this issue.");
+    } catch (error) {
+      console.error("Support issue error:", error);
+      showToast(error.message || "Could not update issue support.");
+    }
   }
 
-  function updateStatus(issueId, status) {
+  // FIXED: Admin status changes now use the backend API.
+  async function updateStatus(issueId, status) {
     if (!isAdmin()) {
+      showToast("Admin access is required to change issue status.");
+      return;
+    }
+
+    if (!online) {
       showToast(
-        "Admin access is required to change issue status."
+        "You are offline. Please reconnect before changing status."
       );
       return;
     }
 
-    setIssues((prev) =>
-      prev.map((issue) =>
-        issue.id === issueId
-          ? {
-              ...issue,
-              status,
-            }
-          : issue
-      )
-    );
+    if (!statuses.includes(status)) {
+      showToast("Invalid issue status.");
+      return;
+    }
 
-    setSelectedIssue((prev) => {
-      if (!prev || prev.id !== issueId) return prev;
+    try {
+      const data = await updateIssueStatus(issueId, status);
+      const updatedIssue = mapDatabaseIssue(data);
 
-      return {
-        ...prev,
-        status,
-      };
-    });
+      setIssues((previous) => {
+        const updated = previous.map((issue) =>
+          issue.id === issueId ? updatedIssue : issue
+        );
 
-    showToast(`Issue marked as ${status}.`);
+        localStorage.setItem(CACHE_KEY, JSON.stringify(updated));
+        return updated;
+      });
+
+      setSelectedIssue((previous) =>
+        previous?.id === issueId ? updatedIssue : previous
+      );
+
+      showToast(`Issue marked as ${status}.`);
+    } catch (error) {
+      console.error("Update status error:", error);
+      showToast(error.message || "Could not update issue status.");
+    }
   }
 
   function openIssue(issue) {
     setSelectedIssue(issue);
-    setScreen("details");
+    setActivePage("issue");
   }
 
-  function goTo(screenName) {
-    if (
-      screenName === "report" &&
-      !isStudent()
-    ) {
-      showToast(
-        "Only student accounts can report issues."
-      );
-      return;
-    }
+  function formatDate(date) {
+    if (!date) return "Recently";
 
-    if (
-      screenName === "admin" &&
-      !isAdmin()
-    ) {
-      showToast(
-        "Admin login required."
-      );
-      return;
-    }
+    const current = new Date();
+    const target = new Date(date);
 
-    setScreen(screenName);
-    setSelectedIssue(null);
-    setShowAdmin(false);
+    const diff = current.getTime() - target.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days === 1) return "Yesterday";
+    if (days < 7) return `${days}d ago`;
+
+    return target.toLocaleDateString();
   }
-
-  function filteredIssues() {
-    const query = normalizeText(search);
-
-    let result = sortedIssues;
-
-    if (query) {
-      result = result.filter((issue) =>
-        normalizeText(
-          `${issue.id} ${issue.title} ${issue.category} ${issue.location} ${issue.status}`
-        ).includes(query)
-      );
-    }
-
-    return result;
-  }
-
-  /* =========================
-     LOGIN SCREEN
-  ========================= */
 
   if (!session) {
     if (!loginRole) {
       return (
         <div className="auth-shell">
-          <div className="auth-decoration auth-decoration-one"></div>
-          <div className="auth-decoration auth-decoration-two"></div>
-
           <div className="auth-brand">
-            <div className="brand-mark large">
-              CF
-            </div>
-
+            <div className="brand-mark">CF</div>
             <div>
-              <strong>CampusFix</strong>
-              <span>
-                Smart Campus Resolution
-              </span>
+              <h1>CampusFix</h1>
+              <p>Smart Campus Issue Resolution</p>
             </div>
           </div>
 
           <div className="role-selection">
             <div className="auth-heading">
-              <span className="eyebrow">
-                CAMPUS ACCESS
-              </span>
-
-              <h1>
-                Welcome to CampusFix
-              </h1>
-
-              <p>
-                Choose your account type to continue.
-              </p>
+              <span className="eyebrow">WELCOME</span>
+              <h2>How do you want to enter?</h2>
+              <p>Select your role to access the CampusFix portal.</p>
             </div>
 
             <div className="role-grid">
               <button
                 className="role-card"
-                onClick={() =>
-                  setLoginRole("student")
-                }
+                onClick={() => setLoginRole("student")}
               >
-                <div className="role-icon student-icon">
-                  ♙
-                </div>
-
-                <div>
-                  <span className="role-label">
-                    STUDENT
-                  </span>
-
-                  <h2>
-                    Student Login
-                  </h2>
-
-                  <p>
-                    Report issues, support existing
-                    problems and track your requests.
-                  </p>
-                </div>
-
-                <span className="role-arrow">
-                  →
-                </span>
+                <div className="role-icon">🎓</div>
+                <h3>Student</h3>
+                <p>
+                  Report campus problems, support existing issues and
+                  track progress.
+                </p>
+                <span>Continue as Student →</span>
               </button>
 
               <button
-                className="role-card admin-role-card"
-                onClick={() =>
-                  setLoginRole("admin")
-                }
+                className="role-card"
+                onClick={() => setLoginRole("admin")}
               >
-                <div className="role-icon admin-icon">
-                  ◈
-                </div>
-
-                <div>
-                  <span className="role-label">
-                    ADMIN / STAFF
-                  </span>
-
-                  <h2>
-                    Admin Login
-                  </h2>
-
-                  <p>
-                    Review priority issues, assign teams
-                    and manage resolution status.
-                  </p>
-                </div>
-
-                <span className="role-arrow">
-                  →
-                </span>
+                <div className="role-icon">🛡️</div>
+                <h3>Admin / Staff</h3>
+                <p>
+                  Review reported issues, prioritize problems and update
+                  resolution status.
+                </p>
+                <span>Continue as Admin →</span>
               </button>
             </div>
-
-            <div className="auth-note">
-              <span>🔒</span>
-              Separate role-based access protects
-              administrative actions.
-            </div>
-          </div>
-
-          <div className="auth-footer">
-            CampusFix • Hackathon Demo
           </div>
         </div>
       );
     }
 
+    const isAdminLogin = loginRole === "admin";
+
     return (
       <div className="auth-shell">
-        <div className="auth-decoration auth-decoration-one"></div>
-        <div className="auth-decoration auth-decoration-two"></div>
-
         <div className="auth-brand">
-          <div className="brand-mark large">
-            CF
-          </div>
-
+          <div className="brand-mark">CF</div>
           <div>
-            <strong>CampusFix</strong>
-            <span>
-              Smart Campus Resolution
-            </span>
+            <h1>CampusFix</h1>
+            <p>Smart Campus Issue Resolution</p>
           </div>
         </div>
 
-        <div className="login-card">
+        <div className="login-wrapper">
           <button
-            className="back-login"
-            onClick={() => {
-              setLoginRole(null);
-              setLoginError("");
-            }}
+            className="back-button"
+            onClick={() => setLoginRole(null)}
           >
-            ← Choose another account
+            ← Back to role selection
           </button>
 
-          <div className="login-role-icon">
-            {loginRole === "admin" ? "◈" : "♙"}
-          </div>
+          <form className="login-card" onSubmit={handleLogin}>
+            <div className="auth-heading">
+              <span className="eyebrow">
+                {isAdminLogin ? "ADMIN PORTAL" : "STUDENT PORTAL"}
+              </span>
+              <h2>{isAdminLogin ? "Admin sign in" : "Student sign in"}</h2>
+              <p>
+                {isAdminLogin
+                  ? "Access the CampusFix Action Center."
+                  : "Report and track issues across your campus."}
+              </p>
+            </div>
 
-          <span className="eyebrow">
-            {loginRole === "admin"
-              ? "ADMIN ACCESS"
-              : "STUDENT ACCESS"}
-          </span>
-
-          <h1>
-            {loginRole === "admin"
-              ? "Admin Login"
-              : "Student Login"}
-          </h1>
-
-          <p>
-            {loginRole === "admin"
-              ? "Authorized staff can manage campus issue resolution."
-              : "Sign in to report and support campus issues."}
-          </p>
-
-          <form
-            className="login-form"
-            onSubmit={handleLogin}
-          >
             <label>
-              {loginRole === "admin"
-                ? "Admin ID"
-                : "Student ID"}
+              Username
+              <input
+                name="username"
+                value={loginForm.username}
+                onChange={handleLoginInput}
+                placeholder={isAdminLogin ? "admin01" : "student01"}
+                autoComplete="username"
+              />
             </label>
 
-            <input
-              type="text"
-              value={loginForm.username}
-              onChange={(e) =>
-                handleLoginChange(
-                  "username",
-                  e.target.value
-                )
-              }
-              placeholder={
-                loginRole === "admin"
-                  ? "Enter admin ID"
-                  : "Enter student ID"
-              }
-              autoComplete="username"
-            />
+            <label>
+              Password
+              <input
+                type="password"
+                name="password"
+                value={loginForm.password}
+                onChange={handleLoginInput}
+                placeholder="Enter password"
+                autoComplete="current-password"
+              />
+            </label>
 
-            <label>Password</label>
-
-            <input
-              type="password"
-              value={loginForm.password}
-              onChange={(e) =>
-                handleLoginChange(
-                  "password",
-                  e.target.value
-                )
-              }
-              placeholder="Enter password"
-              autoComplete="current-password"
-            />
-
-            {loginError && (
-              <div className="login-error">
-                <span>!</span>
-                {loginError}
-              </div>
-            )}
-
-            <button
-              className="login-button"
-              type="submit"
-            >
-              Sign in →
+            <button type="submit" className="primary-button full-width">
+              Sign in
             </button>
+
+            <div className="demo-credentials">
+              <strong>Demo credentials</strong>
+              <span>
+                Username: {isAdminLogin ? "admin01" : "student01"}
+              </span>
+              <span>
+                Password: {isAdminLogin ? "admin123" : "student123"}
+              </span>
+            </div>
           </form>
-
-          <div className="demo-credentials">
-            <span>DEMO CREDENTIALS</span>
-
-            {loginRole === "admin" ? (
-              <p>
-                Admin ID: <strong>admin01</strong>
-                <br />
-                Password:{" "}
-                <strong>admin123</strong>
-              </p>
-            ) : (
-              <p>
-                Student ID:{" "}
-                <strong>student01</strong>
-                <br />
-                Password:{" "}
-                <strong>student123</strong>
-              </p>
-            )}
-          </div>
         </div>
-
-        <div className="auth-footer">
-          CampusFix • Role Protected Demo
-        </div>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-logo">
-          CF
-        </div>
-
-        <div className="spinner"></div>
-
-        <h2>
-          Loading CampusFix
-        </h2>
-
-        <p>
-          Restoring your campus issue workspace...
-        </p>
       </div>
     );
   }
 
   return (
     <div className="app-shell">
-      {!isOnline && (
+      {!online && (
         <div className="offline-banner">
           <span>●</span>
-          You are offline — CampusFix is
-          saving changes locally.
+          You are offline. CampusFix is showing saved data.
         </div>
       )}
 
-      {toast && (
-        <div className="toast">
-          {toast}
-        </div>
-      )}
-
-      <header className="navbar">
-        <div
-          className="brand"
+      <header className="topbar">
+        <button
+          className="brand-button"
           onClick={() => goTo("dashboard")}
         >
-          <div className="brand-mark">
-            CF
-          </div>
-
+          <div className="brand-mark small">CF</div>
           <div>
             <strong>CampusFix</strong>
-            <span>
-              Smart Campus Resolution
-            </span>
+            <span>Campus Issue Resolution</span>
           </div>
-        </div>
+        </button>
 
-        <nav>
+        <nav className="main-nav">
           <button
             className={
-              screen === "dashboard"
-                ? "nav-active"
-                : ""
+              activePage === "dashboard" ? "nav-button active" : "nav-button"
             }
-            onClick={() =>
-              goTo("dashboard")
-            }
+            onClick={() => goTo("dashboard")}
           >
             Dashboard
           </button>
 
           {isStudent() && (
+            <>
+              <button
+                className={
+                  activePage === "report" ? "nav-button active" : "nav-button"
+                }
+                onClick={() => goTo("report")}
+              >
+                Report Issue
+              </button>
+
+              <button
+                className="nav-button"
+                onClick={() => {
+                  setSearch(session.username);
+                  setActivePage("issues");
+                }}
+              >
+                My Issues
+              </button>
+            </>
+          )}
+
+          {isAdmin() && (
             <button
               className={
-                screen === "report"
-                  ? "nav-active"
-                  : ""
+                activePage === "admin" ? "nav-button active" : "nav-button"
               }
-              onClick={() =>
-                goTo("report")
-              }
+              onClick={() => goTo("admin")}
             >
-              Report Issue
+              All Issues
             </button>
           )}
 
           <button
             className={
-              screen === "issues"
-                ? "nav-active"
-                : ""
+              activePage === "pulse" ? "nav-button active" : "nav-button"
             }
-            onClick={() =>
-              goTo("issues")
-            }
-          >
-            {isAdmin()
-              ? "All Issues"
-              : "My Issues"}
-          </button>
-
-          <button
-            onClick={() => {
-              goTo("dashboard");
-
-              setTimeout(() => {
-                document
-                  .getElementById(
-                    "campus-pulse"
-                  )
-                  ?.scrollIntoView({
-                    behavior: "smooth",
-                  });
-              }, 50);
-            }}
+            onClick={() => goTo("pulse")}
           >
             Campus Pulse
           </button>
         </nav>
 
-        <div className="nav-right">
-          <span
-            className={`connection ${
-              isOnline
-                ? "online"
-                : "offline"
-            }`}
-          >
-            <span></span>
-            {isOnline
-              ? "Live"
-              : "Offline"}
+        <div className="user-area">
+          <span className={isAdmin() ? "role-chip admin" : "role-chip student"}>
+            {isAdmin() ? "ADMIN" : "STUDENT"}
           </span>
 
-          <div
-            className={`role-chip ${
-              isAdmin()
-                ? "admin-chip"
-                : "student-chip"
-            }`}
-          >
-            {isAdmin()
-              ? "ADMIN"
-              : "STUDENT"}
-          </div>
-
           <div className="avatar">
-            {isAdmin() ? "A" : "R"}
+            {session.username.charAt(0).toUpperCase()}
           </div>
 
           <button
             className="logout-button"
             onClick={logout}
+            title="Logout"
           >
-            Logout
+            ↪
           </button>
         </div>
       </header>
 
-      {showAdmin && isAdmin() && (
-        <section className="admin-panel">
-          <div>
-            <span className="eyebrow">
-              ADMIN ACTION CENTER
-            </span>
-
-            <h2>
-              Resolve the highest-impact
-              problems first.
-            </h2>
-
-            <p>
-              Issues are ranked using urgency,
-              affected students, category and
-              campus location.
-            </p>
-          </div>
-
-          <div className="admin-summary">
-            <div>
-              <strong>
-                {criticalIssues.length}
-              </strong>
-
-              <span>Critical</span>
-            </div>
-
-            <div>
-              <strong>
-                {activeIssues.length}
-              </strong>
-
-              <span>Active</span>
-            </div>
-
-            <div>
-              <strong>
-                {resolvedIssues.length}
-              </strong>
-
-              <span>Resolved</span>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {screen === "dashboard" && (
-        <main>
-          <section className="hero">
-            <div className="hero-content">
+      <main className="main-content">
+        {activePage === "dashboard" && (
+          <>
+            <section className="hero-section">
               <div>
-                <span className="eyebrow hero-eyebrow">
-                  CAMPUS PULSE •{" "}
-                  {isOnline
-                    ? "SYSTEM ONLINE"
-                    : "OFFLINE MODE"}
-                </span>
-
+                <span className="eyebrow">CAMPUS PULSE</span>
                 <h1>
-                  Good morning,{" "}
-                  {isAdmin()
-                    ? "Admin."
-                    : "Student."}
+                  Turn campus problems
+                  <br />
+                  into <span>smart action.</span>
                 </h1>
-
                 <p>
-                  {isAdmin()
-                    ? "Monitor campus problems, prioritize urgent issues and move them toward resolution."
-                    : "See what needs attention across campus and help turn individual complaints into collective action."}
+                  CampusFix groups similar issues, measures community impact
+                  and helps campus teams resolve the most important problems
+                  first.
                 </p>
 
                 <div className="hero-actions">
                   {isStudent() && (
                     <button
                       className="primary-button"
-                      onClick={() =>
-                        goTo("report")
-                      }
+                      onClick={() => goTo("report")}
                     >
-                      + Report a New Issue
+                      + Report an Issue
                     </button>
                   )}
-
-                  {isAdmin() && (
-                    <button
-                      className="primary-button"
-                      onClick={() => {
-                        setShowAdmin(true);
-                      }}
-                    >
-                      ◈ Open Admin Center
-                    </button>
-                  )}
-
                   <button
                     className="secondary-button"
-                    onClick={() =>
-                      goTo("issues")
-                    }
+                    onClick={() => goTo("pulse")}
                   >
-                    {isAdmin()
-                      ? "Manage All Issues →"
-                      : "View My Issues →"}
+                    View Campus Pulse →
                   </button>
                 </div>
               </div>
 
-              <div className="hero-orbit">
-                <div className="orbit-ring ring-one"></div>
-                <div className="orbit-ring ring-two"></div>
-
-                <div className="orbit-center">
-                  <strong>
-                    {activeIssues.length}
-                  </strong>
-
-                  <span>
-                    active issues
-                  </span>
+              <div className="hero-card">
+                <div className="hero-card-top">
+                  <span>LIVE CAMPUS SIGNAL</span>
+                  <span className="live-dot">● LIVE</span>
                 </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="page-container">
-            <div className="section-heading">
-              <div>
-                <span className="eyebrow">
-                  OVERVIEW
-                </span>
-
-                <h2>
-                  Campus Pulse
-                </h2>
-              </div>
-
-              <span className="updated-text">
-                {issues.length} total reports
-              </span>
-            </div>
-
-            <div className="stats-grid">
-              <div className="stat-card critical-stat">
-                <span className="stat-icon">
-                  !
-                </span>
-
-                <div>
-                  <strong>
-                    {criticalIssues.length}
-                  </strong>
-
-                  <span>
-                    Critical Issues
-                  </span>
-                </div>
-              </div>
-
-              <div className="stat-card">
-                <span className="stat-icon">
-                  ◈
-                </span>
-
-                <div>
-                  <strong>
-                    {activeIssues.length}
-                  </strong>
-
-                  <span>
-                    Active Issues
-                  </span>
-                </div>
-              </div>
-
-              <div className="stat-card">
-                <span className="stat-icon">
-                  ✓
-                </span>
-
-                <div>
-                  <strong>
-                    {resolvedIssues.length}
-                  </strong>
-
-                  <span>
-                    Resolved
-                  </span>
-                </div>
-              </div>
-
-              <div className="stat-card">
-                <span className="stat-icon">
-                  ◎
-                </span>
-
-                <div>
-                  <strong>
-                    {totalAffected}
-                  </strong>
-
-                  <span>
-                    Students Affected
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="dashboard-grid">
-              <section className="panel priority-panel">
-                <div className="panel-heading">
+                <div className="hero-number">{stats.affected}</div>
+                <p>
+                  student impact signals
+                  <br />
+                  across campus
+                </p>
+                <div className="hero-mini-stats">
                   <div>
-                    <span className="eyebrow">
-                      SMART PRIORITY
-                    </span>
-
-                    <h2>
-                      Needs Attention
-                    </h2>
+                    <strong>{stats.active}</strong>
+                    <span>Active</span>
                   </div>
-
-                  <button
-                    className="text-button"
-                    onClick={() =>
-                      goTo("issues")
-                    }
-                  >
-                    View all →
-                  </button>
+                  <div>
+                    <strong>{stats.highPriority}</strong>
+                    <span>High priority</span>
+                  </div>
+                  <div>
+                    <strong>{stats.resolved}</strong>
+                    <span>Resolved</span>
+                  </div>
                 </div>
+              </div>
+            </section>
 
-                {sortedIssues
+            <section className="stats-grid">
+              <div className="stat-card">
+                <span>Total issues</span>
+                <strong>{stats.total}</strong>
+                <small>Reported on campus</small>
+              </div>
+              <div className="stat-card">
+                <span>Active issues</span>
+                <strong>{stats.active}</strong>
+                <small>Need attention</small>
+              </div>
+              <div className="stat-card">
+                <span>High priority</span>
+                <strong>{stats.highPriority}</strong>
+                <small>Priority score 70+</small>
+              </div>
+              <div className="stat-card">
+                <span>Resolved</span>
+                <strong>{stats.resolved}</strong>
+                <small>Successfully closed</small>
+              </div>
+            </section>
+
+            <section className="section-header">
+              <div>
+                <span className="eyebrow">COMMUNITY SIGNAL</span>
+                <h2>Issues needing attention</h2>
+              </div>
+              <button
+                className="text-button"
+                onClick={() => setActivePage("issues")}
+              >
+                View all →
+              </button>
+            </section>
+
+            {loading ? (
+              <div className="loading-card">
+                <div className="spinner"></div>
+                <p>Loading campus issues...</p>
+              </div>
+            ) : filteredIssues.length === 0 ? (
+              <div className="empty-state">
+                <div>✓</div>
+                <h3>No issues found</h3>
+                <p>Great! There are no matching campus issues.</p>
+              </div>
+            ) : (
+              <div className="issue-grid">
+                {filteredIssues
+                  .slice()
+                  .sort((a, b) => b.priority - a.priority)
                   .slice(0, 3)
                   .map((issue) => (
-                    <button
-                      className="issue-card"
+                    <IssueCard
                       key={issue.id}
-                      onClick={() =>
-                        openIssue(issue)
-                      }
-                    >
-                      <div className="issue-icon">
-                        {getIcon(
-                          issue.category
-                        )}
-                      </div>
-
-                      <div className="issue-main">
-                        <div className="issue-top">
-                          <span className="issue-id">
-                            {issue.id}
-                          </span>
-
-                          <span
-                            className={`priority-badge ${
-                              issue.priority >= 85
-                                ? "critical"
-                                : issue.priority >=
-                                  70
-                                ? "high"
-                                : "medium"
-                            }`}
-                          >
-                            {issue.priority}
-                          </span>
-                        </div>
-
-                        <h3>
-                          {issue.title}
-                        </h3>
-
-                        <p>
-                          {issue.location} •{" "}
-                          {issue.category} •{" "}
-                          {issue.affected} affected
-                        </p>
-
-                        <div className="issue-bottom">
-                          <span>
-                            {issue.team}
-                          </span>
-
-                          <span
-                            className={`status ${issue.status
-                              .replaceAll(
-                                " ",
-                                "-"
-                              )
-                              .toLowerCase()}`}
-                          >
-                            {issue.status}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
+                      issue={issue}
+                      isStudent={isStudent()}
+                      isAdmin={isAdmin()}
+                      onOpen={openIssue}
+                      onSupport={supportIssue}
+                      onStatus={updateStatus}
+                    />
                   ))}
+              </div>
+            )}
 
-                {sortedIssues.length === 0 && (
-                  <div className="empty-state compact">
-                    <span>✓</span>
-
-                    <h3>
-                      No active issues
-                    </h3>
-
-                    <p>
-                      Campus is looking good.
-                    </p>
-                  </div>
-                )}
-              </section>
-
-              <section
-                className="panel map-panel"
-                id="campus-pulse"
-              >
-                <div className="panel-heading">
-                  <div>
-                    <span className="eyebrow">
-                      LIVE SIGNAL
-                    </span>
-
-                    <h2>
-                      Campus Pulse Map
-                    </h2>
-                  </div>
-
-                  <span className="map-live">
-                    ● LIVE
-                  </span>
+            <section className="pulse-preview">
+              <div className="section-header">
+                <div>
+                  <span className="eyebrow">CAMPUS MAP</span>
+                  <h2>Where problems are happening</h2>
                 </div>
-
-                <div className="campus-map">
-                  <div className="map-road road-one"></div>
-                  <div className="map-road road-two"></div>
-
-                  {locationsData.map(
-                    (item, index) => {
-                      const positions = [
-                        "building-a",
-                        "building-b",
-                        "building-c",
-                        "building-d",
-                        "building-e",
-                        "building-f",
-                        "building-g",
-                        "building-h",
-                      ];
-
-                      return (
-                        <button
-                          key={
-                            item.location
-                          }
-                          className={`map-building ${
-                            positions[index]
-                          } ${
-                            item.critical
-                              ? "map-critical"
-                              : item.count
-                              ? "map-active"
-                              : ""
-                          }`}
-                          onClick={() => {
-                            setSearch(
-                              item.location
-                            );
-                            goTo("issues");
-                          }}
-                        >
-                          <span>
-                            {item.location.replace(
-                              "Hostel ",
-                              "H"
-                            )}
-                          </span>
-
-                          {item.count > 0 && (
-                            <b>
-                              {item.count}
-                            </b>
-                          )}
-                        </button>
-                      );
-                    }
-                  )}
-
-                  <div className="map-legend">
-                    <span>
-                      <i className="legend-dot critical-dot"></i>
-                      Critical
-                    </span>
-
-                    <span>
-                      <i className="legend-dot active-dot"></i>
-                      Active
-                    </span>
-
-                    <span>
-                      <i className="legend-dot normal-dot"></i>
-                      Clear
-                    </span>
-                  </div>
-                </div>
-              </section>
-            </div>
-
-            <section className="community-panel">
-              <div className="community-copy">
-                <span className="eyebrow">
-                  COMMUNITY SIGNAL
-                </span>
-
-                <h2>
-                  One problem. Many voices.
-                </h2>
-
-                <p>
-                  Instead of creating duplicate
-                  complaints, students can support
-                  an existing issue. Every
-                  additional supporter increases
-                  its impact score.
-                </p>
+                <button
+                  className="text-button"
+                  onClick={() => goTo("pulse")}
+                >
+                  Explore pulse →
+                </button>
               </div>
 
-              {sortedIssues[0] && (
-                <div className="community-feature">
-                  <div className="community-icon">
-                    {getIcon(
-                      sortedIssues[0].category
-                    )}
-                  </div>
-
-                  <div>
-                    <span>
-                      {sortedIssues[0].id}
-                    </span>
-
-                    <h3>
-                      {sortedIssues[0].title}
-                    </h3>
-
-                    <p>
-                      {sortedIssues[0].affected}{" "}
-                      students affected •
-                      Priority{" "}
-                      {sortedIssues[0].priority}
-                    </p>
-                  </div>
-
-                  {isStudent() ? (
-                    <button
-                      className="support-button"
-                      onClick={() =>
-                        supportIssue(
-                          sortedIssues[0].id
-                        )
-                      }
-                    >
-                      I'm affected too +
-                    </button>
-                  ) : (
-                    <span className="admin-view-label">
-                      Admin monitoring
-                    </span>
-                  )}
-                </div>
-              )}
+              <CampusMap
+                campusPulse={campusPulse}
+                onSelect={(location) => {
+                  setSearch(location);
+                  setActivePage("issues");
+                }}
+              />
             </section>
-          </section>
-        </main>
-      )}
+          </>
+        )}
 
-      {screen === "report" &&
-        isStudent() && (
-          <main className="page-container report-page">
-            <div className="page-title">
-              <span className="eyebrow">
-                SMART REPORTING
-              </span>
-
-              <h1>
-                Report a Campus Issue
-              </h1>
-
+        {activePage === "report" && isStudent() && (
+          <section className="page-section">
+            <div className="page-heading">
+              <span className="eyebrow">SMART REPORTING</span>
+              <h1>Report a campus issue</h1>
               <p>
-                Tell us what happened. CampusFix
-                will calculate the priority
+                Tell us what happened. CampusFix calculates priority
                 automatically.
               </p>
             </div>
 
             <div className="report-layout">
-              <form
-                className="report-form panel"
-                onSubmit={submitIssue}
-              >
-                <div className="form-section">
-                  <label>
-                    Issue title
-                    <span>*</span>
-                  </label>
-
+              <form className="report-card" onSubmit={submitIssue}>
+                <label>
+                  Issue title
                   <input
-                    type="text"
                     value={form.title}
-                    maxLength={80}
-                    onChange={(e) =>
-                      updateForm(
-                        "title",
-                        e.target.value
-                      )
+                    onChange={(event) =>
+                      updateForm("title", event.target.value)
                     }
-                    placeholder="e.g. Wi-Fi not working in Computer Lab"
+                    placeholder="Example: Wi-Fi not working in lab"
+                    maxLength={100}
                   />
+                </label>
 
-                  <div className="character-count">
-                    {form.title.length}/80
-                  </div>
-                </div>
+                <label>
+                  Description
+                  <textarea
+                    value={form.description}
+                    onChange={(event) =>
+                      updateForm("description", event.target.value)
+                    }
+                    placeholder="Describe the problem, where it happens and how it affects students..."
+                    maxLength={400}
+                    rows={6}
+                  />
+                  <small>{form.description.length}/400 characters</small>
+                </label>
 
-                <div className="form-section">
+                <div className="form-grid">
                   <label>
-                    Description
-                    <span>*</span>
+                    Category
+                    <select
+                      value={form.category}
+                      onChange={(event) =>
+                        updateForm("category", event.target.value)
+                      }
+                    >
+                      {categories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
                   </label>
 
-                  <textarea
-                    value={
-                      form.description
-                    }
-                    maxLength={400}
-                    onChange={(e) =>
-                      updateForm(
-                        "description",
-                        e.target.value
-                      )
-                    }
-                    placeholder="Explain what is happening and how it affects students..."
-                  />
-
-                  <div className="character-count">
-                    {form.description.length}
-                    /400
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-section">
-                    <label>
-                      Category
-                    </label>
-
+                  <label>
+                    Location
                     <select
-                      value={
-                        form.category
-                      }
-                      onChange={(e) =>
-                        updateForm(
-                          "category",
-                          e.target.value
-                        )
+                      value={form.location}
+                      onChange={(event) =>
+                        updateForm("location", event.target.value)
                       }
                     >
-                      {categories.map(
-                        (category) => (
-                          <option
-                            key={category}
-                          >
-                            {category}
-                          </option>
-                        )
-                      )}
+                      {locations.map((location) => (
+                        <option key={location} value={location}>
+                          {location}
+                        </option>
+                      ))}
                     </select>
-                  </div>
-
-                  <div className="form-section">
-                    <label>
-                      Location
-                    </label>
-
-                    <select
-                      value={
-                        form.location
-                      }
-                      onChange={(e) =>
-                        updateForm(
-                          "location",
-                          e.target.value
-                        )
-                      }
-                    >
-                      {locations.map(
-                        (location) => (
-                          <option
-                            key={location}
-                          >
-                            {location}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
+                  </label>
                 </div>
 
-                <div className="form-row">
-                  <div className="form-section">
-                    <label>
-                      Urgency
-                    </label>
+                <div className="form-grid">
+                  <label>
+                    Urgency
+                    <select
+                      value={form.urgency}
+                      onChange={(event) =>
+                        updateForm("urgency", event.target.value)
+                      }
+                    >
+                      <option>Low</option>
+                      <option>Medium</option>
+                      <option>High</option>
+                    </select>
+                  </label>
 
-                    <div className="urgency-grid">
-                      {[
-                        "Low",
-                        "Medium",
-                        "High",
-                        "Critical",
-                      ].map(
-                        (urgency) => (
-                          <button
-                            type="button"
-                            key={urgency}
-                            className={
-                              form.urgency ===
-                              urgency
-                                ? `urgency-option selected ${urgency.toLowerCase()}`
-                                : "urgency-option"
-                            }
-                            onClick={() =>
-                              updateForm(
-                                "urgency",
-                                urgency
-                              )
-                            }
-                          >
-                            {urgency}
-                          </button>
-                        )
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="form-section">
-                    <label>
-                      Students affected
-                    </label>
-
+                  <label>
+                    Students affected
                     <input
                       type="number"
                       min="1"
                       max="1000"
-                      value={
-                        form.affected
-                      }
-                      onChange={(e) =>
+                      value={form.affected}
+                      onChange={(event) =>
                         updateForm(
                           "affected",
-                          Math.max(
-                            1,
-                            Number(
-                              e.target.value
-                            )
-                          )
+                          Math.max(1, Number(event.target.value))
                         )
                       }
                     />
-                  </div>
+                  </label>
                 </div>
 
                 {duplicateMatch && (
                   <div className="duplicate-warning">
-                    <strong>
-                      Similar issue detected
-                    </strong>
-
+                    <strong>Similar issue detected</strong>
                     <p>
-                      {duplicateMatch.id} —{" "}
-                      {duplicateMatch.title}
+                      {duplicateMatch.title} ({duplicateMatch.id}) already
+                      exists. You can support that issue instead of creating
+                      another duplicate.
                     </p>
-
-                    <small>
-                      Supporting the existing issue
-                      avoids duplicate reports and
-                      increases its community signal.
-                    </small>
-
                     <button
                       type="button"
-                      onClick={() =>
-                        openIssue(
-                          duplicateMatch
-                        )
-                      }
+                      className="secondary-button"
+                      onClick={() => openIssue(duplicateMatch)}
                     >
-                      View existing issue →
+                      View existing issue
                     </button>
                   </div>
                 )}
 
                 <button
-                  className="submit-button"
+                  className="primary-button full-width"
                   type="submit"
                   disabled={isSaving}
                 >
-                  {isSaving ? (
-                    <>
-                      <span className="button-spinner"></span>
-                      Processing...
-                    </>
-                  ) : (
-                    "Submit Issue →"
-                  )}
+                  {isSaving ? "Saving issue..." : "Submit issue"}
                 </button>
               </form>
 
-              <aside className="priority-preview panel">
-                <span className="eyebrow">
-                  AI-ASSISTED PRIORITY
-                </span>
-
-                <h2>
-                  Smart Priority Score
-                </h2>
-
-                <div className="score-circle">
-                  <strong>
-                    {priorityPreview}
-                  </strong>
-
-                  <span>
-                    /100
-                  </span>
+              <div className="priority-card">
+                <span className="eyebrow">SMART PRIORITY</span>
+                <div
+                  className={`priority-circle ${getPriorityClass(
+                    priorityPreview
+                  )}`}
+                >
+                  <strong>{priorityPreview}</strong>
+                  <span>/100</span>
                 </div>
-
-                <div className="score-label">
-                  <span>
-                    Priority
-                  </span>
-
-                  <strong>
-                    {priorityLabel(
-                      priorityPreview
-                    )}
-                  </strong>
+                <h3>{getPriorityLabel(priorityPreview)} priority</h3>
+                <p>
+                  CampusFix combines urgency, affected students, category and
+                  location to calculate a transparent priority score.
+                </p>
+                <div className="team-preview">
+                  <span>Suggested team</span>
+                  <strong>{getTeam(form.category)}</strong>
                 </div>
-
-                <div className="score-breakdown">
-                  <div>
-                    <span>
-                      Urgency
-                    </span>
-
-                    <strong>
-                      {form.urgency ===
-                      "Critical"
-                        ? 40
-                        : form.urgency ===
-                          "High"
-                        ? 35
-                        : form.urgency ===
-                          "Medium"
-                        ? 25
-                        : 10}
-                      /40
-                    </strong>
-                  </div>
-
-                  <div>
-                    <span>
-                      Students affected
-                    </span>
-
-                    <strong>
-                      {Math.min(
-                        Math.round(
-                          Number(
-                            form.affected
-                          ) * 0.75
-                        ),
-                        30
-                      )}
-                      /30
-                    </strong>
-                  </div>
-
-                  <div>
-                    <span>
-                      Category impact
-                    </span>
-
-                    <strong>
-                      {form.category ===
-                        "Electricity" ||
-                      form.category ===
-                        "Water" ||
-                      form.category ===
-                        "Security"
-                        ? 20
-                        : form.category ===
-                          "Wi-Fi"
-                        ? 18
-                        : 12}
-                      /20
-                    </strong>
-                  </div>
-
-                  <div>
-                    <span>
-                      Location impact
-                    </span>
-
-                    <strong>
-                      7/10
-                    </strong>
-                  </div>
-                </div>
-
-                <div className="team-recommendation">
-                  <span>
-                    Recommended team
-                  </span>
-
-                  <strong>
-                    {getTeam(
-                      form.category
-                    )}
-                  </strong>
-                </div>
-              </aside>
+              </div>
             </div>
-          </main>
+          </section>
         )}
 
-      {screen === "issues" && (
-        <main className="page-container issues-page">
-          <div className="page-title">
-            <span className="eyebrow">
-              {isAdmin()
-                ? "ADMIN ISSUE CENTER"
-                : "ISSUE CENTER"}
-            </span>
+        {activePage === "issues" && (
+          <section className="page-section">
+            <div className="page-heading">
+              <span className="eyebrow">
+                {isAdmin() ? "ISSUE MANAGEMENT" : "MY CAMPUS ISSUES"}
+              </span>
+              <h1>{isAdmin() ? "All reported issues" : "Campus issue board"}</h1>
+              <p>
+                Search, filter and open an issue to see its complete
+                resolution timeline.
+              </p>
+            </div>
 
-            <h1>
-              {isAdmin()
-                ? "All Campus Issues"
-                : "My Campus Issues"}
-            </h1>
+            <div className="filters">
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search issues..."
+              />
+              <select
+                value={filterStatus}
+                onChange={(event) => setFilterStatus(event.target.value)}
+              >
+                <option>All</option>
+                {statuses.map((status) => (
+                  <option key={status}>{status}</option>
+                ))}
+              </select>
+              <select
+                value={filterCategory}
+                onChange={(event) => setFilterCategory(event.target.value)}
+              >
+                <option>All</option>
+                {categories.map((category) => (
+                  <option key={category}>{category}</option>
+                ))}
+              </select>
+            </div>
 
-            <p>
-              {isAdmin()
-                ? "Review, prioritize and manage campus issue resolution."
-                : "Search, support and track campus problems."}
-            </p>
-          </div>
+            {loading ? (
+              <div className="loading-card">
+                <div className="spinner"></div>
+                <p>Loading issues...</p>
+              </div>
+            ) : filteredIssues.length === 0 ? (
+              <div className="empty-state">
+                <div>⌕</div>
+                <h3>No matching issues</h3>
+                <p>Try another search term or filter.</p>
+              </div>
+            ) : (
+              <div className="issue-grid large">
+                {filteredIssues.map((issue) => (
+                  <IssueCard
+                    key={issue.id}
+                    issue={issue}
+                    isStudent={isStudent()}
+                    isAdmin={isAdmin()}
+                    onOpen={openIssue}
+                    onSupport={supportIssue}
+                    onStatus={updateStatus}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
-          <div className="search-bar">
-            <span>⌕</span>
+        {activePage === "pulse" && (
+          <section className="page-section">
+            <div className="page-heading">
+              <span className="eyebrow">CAMPUS PULSE</span>
+              <h1>See what is happening across campus</h1>
+              <p>A live view of issue concentration and community impact.</p>
+            </div>
 
-            <input
-              value={search}
-              onChange={(e) =>
-                setSearch(e.target.value)
-              }
-              placeholder="Search by issue, ID, category, location..."
+            <CampusMap
+              campusPulse={campusPulse}
+              onSelect={(location) => {
+                setSearch(location);
+                setActivePage("issues");
+              }}
             />
 
-            {search && (
-              <button
-                onClick={() =>
-                  setSearch("")
-                }
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          <div className="issue-results-header">
-            <span>
-              Showing{" "}
-              <strong>
-                {filteredIssues().length}
-              </strong>{" "}
-              issues
-            </span>
-
-            <span>
-              Sorted by smart priority
-            </span>
-          </div>
-
-          <div className="issue-list">
-            {filteredIssues().map(
-              (issue) => (
-                <article
-                  className="full-issue-card panel"
-                  key={issue.id}
-                >
-                  <div className="full-issue-icon">
-                    {getIcon(
-                      issue.category
-                    )}
-                  </div>
-
-                  <div className="full-issue-content">
-                    <div className="issue-top">
-                      <span className="issue-id">
-                        {issue.id}
-                      </span>
-
-                      <span
-                        className={`priority-badge ${
-                          issue.priority >= 85
-                            ? "critical"
-                            : issue.priority >=
-                              70
-                            ? "high"
-                            : "medium"
-                        }`}
-                      >
-                        Priority{" "}
-                        {issue.priority}
-                      </span>
-                    </div>
-
-                    <h2>
-                      {issue.title}
-                    </h2>
-
-                    <p>
-                      {issue.description}
-                    </p>
-
-                    <div className="issue-meta">
-                      <span>
-                        ⌖{" "}
-                        {issue.location}
-                      </span>
-
-                      <span>
-                        ◉{" "}
-                        {issue.affected}{" "}
-                        affected
-                      </span>
-
-                      <span>
-                        ⚙{" "}
-                        {issue.team}
-                      </span>
-
-                      <span className="status">
-                        {issue.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="issue-actions">
-                    <button
-                      className="small-secondary"
-                      onClick={() =>
-                        openIssue(issue)
-                      }
-                    >
-                      Details
-                    </button>
-
-                    {isStudent() &&
-                      issue.status !==
-                        "Resolved" && (
-                        <button
-                          className="small-primary"
-                          onClick={() =>
-                            supportIssue(
-                              issue.id
-                            )
-                          }
-                        >
-                          I'm affected too
-                        </button>
-                      )}
-                  </div>
-                </article>
-              )
-            )}
-
-            {filteredIssues().length ===
-              0 && (
-              <div className="empty-state">
-                <span>⌕</span>
-
-                <h2>
-                  No issues found
-                </h2>
-
-                <p>
-                  Try another search term or
-                  report a new campus issue.
-                </p>
-
-                {isStudent() && (
+            <div className="pulse-list">
+              {campusPulse
+                .filter((item) => item.count > 0)
+                .sort((a, b) => b.priority - a.priority)
+                .map((item) => (
                   <button
-                    className="primary-button"
-                    onClick={() =>
-                      goTo("report")
-                    }
+                    key={item.location}
+                    className="pulse-location"
+                    onClick={() => {
+                      setSearch(item.location);
+                      setActivePage("issues");
+                    }}
                   >
-                    Report an Issue
+                    <div>
+                      <strong>{item.location}</strong>
+                      <span>
+                        {item.count} active signal{item.count !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <div className="pulse-score">{item.priority}</div>
                   </button>
-                )}
-              </div>
-            )}
-          </div>
-        </main>
-      )}
+                ))}
+            </div>
+          </section>
+        )}
 
-      {screen === "details" &&
-        selectedIssue && (
-          <main className="page-container details-page">
-            <button
-              className="back-button"
-              onClick={() =>
-                goTo("issues")
-              }
-            >
-              ← Back to Issues
-            </button>
+        {activePage === "admin" && isAdmin() && (
+          <section className="page-section">
+            <div className="page-heading">
+              <span className="eyebrow">ADMIN ACTION CENTER</span>
+              <h1>Resolve the problems that matter most</h1>
+              <p>
+                Review priority, community impact and status before taking
+                action.
+              </p>
+            </div>
 
-            <div className="details-header">
+            <div className="admin-summary">
               <div>
-                <span className="eyebrow">
-                  {selectedIssue.id} • ISSUE DETAILS
-                </span>
-
-                <h1>
-                  {selectedIssue.title}
-                </h1>
-
-                <p>
-                  {selectedIssue.location} •{" "}
-                  {selectedIssue.category} •{" "}
-                  {selectedIssue.affected}{" "}
-                  students affected
-                </p>
+                <span>High priority</span>
+                <strong>{stats.highPriority}</strong>
               </div>
-
-              <div className="detail-score">
-                <span>
-                  Priority
-                </span>
-
-                <strong>
-                  {selectedIssue.priority}
-                </strong>
-
-                <small>
-                  {priorityLabel(
-                    selectedIssue.priority
-                  )}
-                </small>
+              <div>
+                <span>Active</span>
+                <strong>{stats.active}</strong>
+              </div>
+              <div>
+                <span>Community impact</span>
+                <strong>{stats.affected}</strong>
+              </div>
+              <div>
+                <span>Resolved</span>
+                <strong>{stats.resolved}</strong>
               </div>
             </div>
 
-            <div className="details-grid">
-              <section className="panel detail-main">
-                <span className="eyebrow">
-                  REPORT
-                </span>
+            <div className="section-header">
+              <div>
+                <span className="eyebrow">NEEDS ATTENTION</span>
+                <h2>Priority queue</h2>
+              </div>
+            </div>
 
-                <h2>
-                  What is happening?
-                </h2>
+            <div className="issue-grid large">
+              {issues
+                .filter((issue) => issue.status !== "Resolved")
+                .sort((a, b) => b.priority - a.priority)
+                .map((issue) => (
+                  <IssueCard
+                    key={issue.id}
+                    issue={issue}
+                    isStudent={false}
+                    isAdmin={true}
+                    onOpen={openIssue}
+                    onSupport={supportIssue}
+                    onStatus={updateStatus}
+                  />
+                ))}
+            </div>
+          </section>
+        )}
 
-                <p className="detail-description">
-                  {
-                    selectedIssue.description
-                  }
-                </p>
+        {activePage === "issue" && selectedIssue && (
+          <section className="page-section">
+            <button
+              className="back-button"
+              onClick={() => setActivePage(isAdmin() ? "admin" : "issues")}
+            >
+              ← Back
+            </button>
 
-                <div className="detail-info-grid">
+            <div className="issue-detail">
+              <div className="detail-main">
+                <div className="detail-header">
                   <div>
-                    <span>
-                      Category
-                    </span>
-
-                    <strong>
-                      {
-                        selectedIssue.category
-                      }
-                    </strong>
+                    <span className="issue-id">{selectedIssue.id}</span>
+                    <h1>{selectedIssue.title}</h1>
+                    <p>
+                      Reported {formatDate(selectedIssue.createdAt)} by{" "}
+                      {selectedIssue.reportedBy}
+                    </p>
                   </div>
 
-                  <div>
-                    <span>
-                      Location
-                    </span>
-
-                    <strong>
-                      {
-                        selectedIssue.location
-                      }
-                    </strong>
-                  </div>
-
-                  <div>
-                    <span>
-                      Urgency
-                    </span>
-
-                    <strong>
-                      {
-                        selectedIssue.urgency
-                      }
-                    </strong>
-                  </div>
-
-                  <div>
-                    <span>
-                      Assigned Team
-                    </span>
-
-                    <strong>
-                      {
-                        selectedIssue.team
-                      }
-                    </strong>
+                  <div
+                    className={`priority-badge ${getPriorityClass(
+                      selectedIssue.priority
+                    )}`}
+                  >
+                    <strong>{selectedIssue.priority}</strong>
+                    <span>priority</span>
                   </div>
                 </div>
 
-                {isStudent() && (
-                  <div className="community-action">
-                    <div>
-                      <strong>
-                        {
-                          selectedIssue.affected
-                        }
-                      </strong>
+                <div className="detail-tags">
+                  <span>{selectedIssue.category}</span>
+                  <span>{selectedIssue.location}</span>
+                  <span>{selectedIssue.urgency}</span>
+                  <span>{selectedIssue.affected} affected</span>
+                </div>
 
-                      <span>
-                        students affected
-                      </span>
-                    </div>
+                <div className="description-box">
+                  <h3>Issue description</h3>
+                  <p>{selectedIssue.description}</p>
+                </div>
 
+                <IssueTimeline status={selectedIssue.status} />
+              </div>
+
+              <aside className="detail-side">
+                <div className="side-card">
+                  <span className="eyebrow">COMMUNITY SIGNAL</span>
+                  <strong className="affected-number">
+                    {selectedIssue.affected}
+                  </strong>
+                  <p>students affected by this issue</p>
+
+                  {isStudent() && selectedIssue.status !== "Resolved" && (
                     <button
-                      className="support-button"
-                      disabled={
-                        selectedIssue.status ===
-                        "Resolved"
-                      }
-                      onClick={() =>
-                        supportIssue(
-                          selectedIssue.id
-                        )
-                      }
+                      className="primary-button full-width"
+                      onClick={() => supportIssue(selectedIssue.id)}
                     >
-                      I'm affected too +
+                      + I'm affected too
                     </button>
-                  </div>
-                )}
+                  )}
 
-                {isAdmin() && (
-                  <div className="admin-protection-note">
-                    <span>
-                      🔒
-                    </span>
+                  {isStudent() && (
+                    <small className="support-note">
+                      Supporting an existing issue helps campus teams
+                      understand its impact.
+                    </small>
+                  )}
+                </div>
 
-                    <div>
-                      <strong>
-                        Admin controls enabled
-                      </strong>
+                <div className="side-card">
+                  <span className="eyebrow">ASSIGNED TEAM</span>
+                  <h3>{selectedIssue.team}</h3>
+                  <p>Recommended based on the issue category.</p>
 
-                      <p>
-                        You are signed in as an
-                        authorized administrator.
-                      </p>
+                  {isAdmin() && (
+                    <label className="status-control">
+                      Update status
+                      <select
+                        value={selectedIssue.status}
+                        onChange={(event) =>
+                          updateStatus(selectedIssue.id, event.target.value)
+                        }
+                      >
+                        {statuses.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  {!isAdmin() && (
+                    <div className="managed-note">
+                      Status updates are managed by campus administrators.
                     </div>
-                  </div>
-                )}
-              </section>
-
-              <aside className="panel timeline-panel">
-                <span className="eyebrow">
-                  PROGRESS
-                </span>
-
-                <h2>
-                  Issue Timeline
-                </h2>
-
-                <div className="timeline">
-                  {statuses.map(
-                    (status, index) => {
-                      const currentIndex =
-                        statusIndex(
-                          selectedIssue.status
-                        );
-
-                      return (
-                        <div
-                          key={status}
-                          className={`timeline-item ${
-                            index <=
-                            currentIndex
-                              ? "completed"
-                              : ""
-                          } ${
-                            index ===
-                            currentIndex
-                              ? "current"
-                              : ""
-                          }`}
-                        >
-                          <div className="timeline-dot">
-                            {index <=
-                            currentIndex
-                              ? "✓"
-                              : ""}
-                          </div>
-
-                          <div>
-                            <strong>
-                              {status}
-                            </strong>
-
-                            {index ===
-                              currentIndex && (
-                              <span>
-                                Current status
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
                   )}
                 </div>
               </aside>
             </div>
+          </section>
+        )}
+      </main>
 
-            {isAdmin() && (
-              <section className="panel admin-action">
-                <div>
-                  <span className="eyebrow">
-                    ADMIN ACTION CENTER
-                  </span>
+      {toast && (
+        <div className="toast" role="status">
+          <span>✓</span>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
 
-                  <h2>
-                    Update resolution status
-                  </h2>
+function IssueCard({
+  issue,
+  isStudent,
+  isAdmin,
+  onOpen,
+  onSupport,
+  onStatus,
+}) {
+  return (
+    <article className="issue-card">
+      <div className="issue-card-top">
+        <span className="issue-id">{issue.id}</span>
+        <span
+          className={`priority-pill ${getPriorityClass(issue.priority)}`}
+        >
+          {issue.priority}
+        </span>
+      </div>
 
-                  <p>
-                    Only authenticated administrators
-                    can move issues through the
-                    resolution workflow.
-                  </p>
-                </div>
+      <h3>{issue.title}</h3>
+      <p>{issue.description}</p>
 
-                <select
-                  value={
-                    selectedIssue.status
-                  }
-                  onChange={(e) =>
-                    updateStatus(
-                      selectedIssue.id,
-                      e.target.value
-                    )
-                  }
-                >
-                  {statuses.map(
-                    (status) => (
-                      <option
-                        key={status}
-                      >
-                        {status}
-                      </option>
-                    )
-                  )}
-                </select>
-              </section>
-            )}
+      <div className="issue-meta">
+        <span>📍 {issue.location}</span>
+        <span>👥 {issue.affected}</span>
+      </div>
 
-            {!isAdmin() && (
-              <section className="student-status-note">
-                <span>
-                  🔒
-                </span>
+      <div className="issue-card-footer">
+        <span className="status-pill">{issue.status}</span>
+        <span className="category-pill">{issue.category}</span>
+      </div>
 
-                <div>
-                  <strong>
-                    Status updates are managed by CampusFix administrators.
-                  </strong>
+      <div className="issue-actions">
+        <button
+          className="secondary-button"
+          onClick={() => onOpen(issue)}
+        >
+          View details
+        </button>
 
-                  <p>
-                    You can view the progress but only
-                    authorized staff can change it.
-                  </p>
-                </div>
-              </section>
-            )}
-          </main>
+        {isStudent && issue.status !== "Resolved" && (
+          <button
+            className="support-button"
+            onClick={() => onSupport(issue.id)}
+          >
+            + Affected
+          </button>
         )}
 
-      <footer>
-        <div>
-          <strong>
-            CampusFix
-          </strong>
+        {isAdmin && (
+          <select
+            className="small-status-select"
+            value={issue.status}
+            onChange={(event) => onStatus(issue.id, event.target.value)}
+          >
+            {statuses.map((status) => (
+              <option key={status}>{status}</option>
+            ))}
+          </select>
+        )}
+      </div>
+    </article>
+  );
+}
 
-          <span>
-            Smart campus issue resolution
-          </span>
-        </div>
+function CampusMap({ campusPulse, onSelect }) {
+  const mapLocations = [
+    { name: "Main Block", x: "24%", y: "28%" },
+    { name: "Library", x: "51%", y: "20%" },
+    { name: "Computer Lab", x: "76%", y: "30%" },
+    { name: "CSE Block", x: "28%", y: "61%" },
+    { name: "ECE Block", x: "55%", y: "57%" },
+    { name: "Hostel", x: "78%", y: "66%" },
+  ];
 
+  return (
+    <div className="campus-map">
+      <div className="map-road road-one"></div>
+      <div className="map-road road-two"></div>
+      <div className="map-road road-three"></div>
+
+      {mapLocations.map((location) => {
+        const data = campusPulse.find(
+          (item) => item.location === location.name
+        );
+
+        return (
+          <button
+            key={location.name}
+            className={`map-node ${
+              data?.priority >= 70 ? "hot" : data?.count ? "active" : ""
+            }`}
+            style={{ left: location.x, top: location.y }}
+            onClick={() => onSelect(location.name)}
+          >
+            <span className="map-dot"></span>
+            <strong>{location.name}</strong>
+            <small>
+              {data?.count || 0} issue{data?.count === 1 ? "" : "s"}
+            </small>
+          </button>
+        );
+      })}
+
+      <div className="map-legend">
         <span>
-          {isAdmin()
-            ? "Administrator Mode"
-            : "Student Mode"}{" "}
-          • Hackathon Demo
+          <i className="legend-dot"></i>
+          Active
         </span>
-      </footer>
+        <span>
+          <i className="legend-dot hot"></i>
+          High priority
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function IssueTimeline({ status }) {
+  const steps = [
+    "Pending",
+    "Verified",
+    "Assigned",
+    "In Progress",
+    "Resolved",
+  ];
+
+  const currentIndex = steps.indexOf(status);
+
+  return (
+    <div className="timeline-card">
+      <span className="eyebrow">RESOLUTION TIMELINE</span>
+
+      <div className="timeline">
+        {steps.map((step, index) => {
+          const completed = index <= currentIndex;
+
+          return (
+            <div
+              key={step}
+              className={`timeline-step ${completed ? "completed" : ""}`}
+            >
+              <div className="timeline-dot">
+                {completed ? "✓" : index + 1}
+              </div>
+              <span>{step}</span>
+
+              {index < steps.length - 1 && (
+                <div
+                  className={`timeline-line ${
+                    index < currentIndex ? "completed" : ""
+                  }`}
+                ></div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
