@@ -1,12 +1,10 @@
 name: Build CampusFix APK
 
-# Runs on every push to main, and on demand from the Actions tab.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-# Read-only access; this workflow needs no secrets and deploys nothing.
 permissions:
   contents: read
 
@@ -19,43 +17,59 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Show repository structure
+        run: |
+          pwd
+          ls -la
+          find . -name pubspec.yaml -not -path '*/.dart_tool/*' -not -path '*/build/*'
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Flutter (stable)
+      - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Flutter version
-        run: flutter --version
-
-      - name: Make Gradle wrapper executable
-        run: chmod +x android/gradlew
+      - name: Locate Flutter project
+        id: flutter_project
+        shell: bash
+        run: |
+          if [ -f pubspec.yaml ]; then
+            echo "path=." >> "$GITHUB_OUTPUT"
+          elif [ -f campusfix_mobile/pubspec.yaml ]; then
+            echo "path=campusfix_mobile" >> "$GITHUB_OUTPUT"
+          else
+            echo "Could not find the Flutter project pubspec.yaml"
+            exit 1
+          fi
 
       - name: Install dependencies
+        working-directory: ${{ steps.flutter_project.outputs.path }}
         run: flutter pub get
 
-      # Errors and warnings fail the build. Style-only hints ("info") do not,
-      # so a cosmetic lint cannot block your APK.
       - name: Analyze
+        working-directory: ${{ steps.flutter_project.outputs.path }}
         run: flutter analyze --no-fatal-infos
 
       - name: Run tests
+        working-directory: ${{ steps.flutter_project.outputs.path }}
         run: flutter test
 
       - name: Build release APK
-        run: flutter build apk --release
+        working-directory: ${{ steps.flutter_project.outputs.path }}
+        run: |
+          chmod +x android/gradlew
+          flutter build apk --release
 
-      # Only reached if every step above succeeded.
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: campusfix-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: ${{ steps.flutter_project.outputs.path }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
