@@ -1,16 +1,59 @@
-# React + Vite
+# CampusFix Mobile
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Flutter mobile client for the **CampusFix Campus Issue Portal**. Students report
+campus problems; administrators track them, update their status and remove
+them. It uses the same Express + Supabase PostgreSQL backend as the website.
 
-Currently, two official plugins are available:
+## Architecture
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```
+Flutter app  --HTTPS/JSON-->  Express API (Render)  -->  Supabase PostgreSQL
+ (this repo)                  /api/auth, /api/issues      issues, mobile_users
+```
 
-## React Compiler
+| Folder | Purpose |
+|---|---|
+| `lib/config.dart` | API base URL (overridable with `--dart-define`) |
+| `lib/theme.dart` | Colours / input style copied from the website CSS |
+| `lib/models/` | `Issue`, `AuthSession` |
+| `lib/services/api_service.dart` | All HTTP calls, bearer token, error handling |
+| `lib/utils/priority.dart` | Category/location lists + priority formula (same as website) |
+| `lib/screens/` | Login, issue list, report form, issue detail |
+| `lib/widgets/cf_widgets.dart` | Shared cards, pills, dropdown |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## CRUD mapping
 
-## Expanding the ESLint configuration
+| Operation | Screen / widget | Endpoint | Who |
+|---|---|---|---|
+| **Create** | `ReportIssueScreen` - `Form`, `TextFormField`, dropdowns | `POST /api/issues` | Student |
+| **Read** | `IssuesScreen` - `ListView.builder`, search + filters; `IssueDetailScreen` | `GET /api/issues` | Everyone |
+| **Update** | `IssueDetailScreen` - `DropdownButton` + Save | `PATCH /api/issues/:issueId/status` | Admin |
+| **Delete** | `IssueDetailScreen` - confirm dialog | `DELETE /api/issues/:issueId` | Admin only |
+| Login | `LoginScreen` | `POST /api/auth/login` (JWT) | Everyone |
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Flutter widgets used: `Form`, `TextFormField` (with validators), `DropdownButton`
+(wrapped by `CfDropdown`), `ListView.builder`, `SegmentedButton`, `AlertDialog`,
+`RefreshIndicator`, `FilterChip`, `FloatingActionButton.extended`.
+
+## Security notes
+
+* Passwords are never stored or hard-coded; the JWT is kept **in memory only**.
+* Students see no delete/status controls, `ApiService.deleteIssue` refuses
+  non-admin sessions, **and** the backend must enforce it (see the backend patch).
+* Only the public API URL is in the source.
+
+## Run
+
+```bash
+flutter pub get
+flutter analyze
+flutter test
+
+flutter run                                   # uses the deployed backend
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5000/api   # Android emulator -> local backend
+flutter build apk --release
+```
+
+Render's free tier sleeps: open
+`https://campusfix-backend-z08g.onrender.com/api/health/db` once before a demo.
+The first request can take up to a minute; the app shows a message while waiting.
